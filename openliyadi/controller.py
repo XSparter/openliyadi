@@ -24,8 +24,6 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 logger = logging.getLogger("led_controller")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-DEFAULT_MAC = "12:22:33:44:70:E0"
-
 
 def _to_ibuffer(b: bytes):
     dw = streams.DataWriter()
@@ -34,9 +32,9 @@ def _to_ibuffer(b: bytes):
 
 
 class LEDController:
-    def __init__(self, mac_address: str = DEFAULT_MAC):
+    def __init__(self, mac_address: str | None = None):
         self.mac_address = mac_address
-        self.mac_int = int(mac_address.replace(":", ""), 16)
+        self.mac_int = int(mac_address.replace(":", ""), 16) if mac_address else None
         
         self.le_device = None
         self.gatt_session = None
@@ -60,6 +58,8 @@ class LEDController:
         self._lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()  # serializza worker e sequenze atomiche
         self._last_mode10: bytes | None = None  # ultimo pacchetto modo (per OFF)
+        self._last_conn_fail: float = 0.0  # throttle retry autodiscover
+        self.last_error: str | None = None
 
     def add_status_listener(self, cb: Callable[[dict], None]):
         self._status_listeners.append(cb)
@@ -74,7 +74,9 @@ class LEDController:
 
     def get_status(self) -> dict:
         self.state["connected"] = self.is_connected
-        return dict(self.state)
+        st = dict(self.state)
+        st["last_error"] = self.last_error
+        return st
 
     async def start(self):
         """Avvia la coda di invio comandi."""
@@ -88,8 +90,36 @@ class LEDController:
             self._worker_task = None
         await self.disconnect()
 
+    async def autodiscover(self, scan_timeout: float = 12.0) -> str:
+        """Scansiona e prova TUTTO quello che trova (dal segnale piu' forte)
+        finche' un device espone FFF0 in GATT. Ritorna il MAC e lo imposta
+        come indirizzo del controller."""
+        from .scanner import scan_once, probe_devices
+
+        logger.info("Scansione lampade (%ss)...", scan_timeout)
+        devices = await scan_once(scan_timeout)
+        lamps = sorted(
+            (d for d in devices if d["match"] == "LAMPADA"),
+            key=lambda d: (d["rssi"] is not None, d["rssi"] or -999),
+            reverse=True,
+        )
+        if lamps:
+            addr = lamps[0]["address"]
+            logger.info("Lampada da advertising: %s", addr)
+        else:
+            logger.info("Nessun nome noto: sonda GATT su %d device...", len(devices))
+            hit = await probe_devices(devices)
+            if not hit:
+                raise ConnectionError("nessuna lampada compatibile trovata")
+            addr = hit["address"]
+        self.mac_address = addr
+        self.mac_int = int(addr.replace(":", ""), 16)
+        self.state["address"] = addr
+        return addr
+
     async def connect(self, address: Optional[str] = None) -> bool:
-        """Connette la lampada via WinRT mantenendo la sessione GATT attiva."""
+        """Connette la lampada via WinRT mantenendo la sessione GATT attiva.
+        Senza address: auto-scoperta (scan + sonda GATT su tutto)."""
         async with self._lock:
             if address:
                 self.mac_address = address
@@ -98,6 +128,9 @@ class LEDController:
 
             if self.is_connected and self.char_tx:
                 return True
+
+            if not self.mac_address:
+                await self.autodiscover()
 
             logger.info(f"Connessione a {self.mac_address}...")
             
@@ -234,16 +267,30 @@ class LEDController:
                 logger.error(f"Errore worker: {e}")
                 await asyncio.sleep(0.1)
 
-    async def send_packet(self, pkt: bytes):
-        if not self.is_connected:
+    async def _ensure_connected(self):
+        """Connessione con throttle: se l'ultimo tentativo e' fallito da <20s,
+        fallisce subito invece di rifare scan+sonda (evita loop impazziti)."""
+        if self.is_connected and self.char_tx:
+            return
+        now = asyncio.get_event_loop().time()
+        if now - self._last_conn_fail < 20.0:
+            raise ConnectionError(self.last_error or "lampada non raggiungibile")
+        try:
             await self.connect()
+        except Exception as e:
+            self._last_conn_fail = now
+            self.last_error = f"{type(e).__name__}: {e}"
+            raise
+        self.last_error = None
+
+    async def send_packet(self, pkt: bytes):
+        await self._ensure_connected()
         await self._cmd_queue.put(pkt)
 
     async def send_sequence(self, pkts: list[bytes], gap: float = 0.05):
         """Invia pacchetti IN ORDINE, atomicamente (nessun interleaving con
         lo slider/worker). Usata per sequenze tipo OPEN -> RGB."""
-        if not self.is_connected:
-            await self.connect()
+        await self._ensure_connected()
         async with self._write_lock:
             for p in pkts:
                 if not self.is_connected or not self.char_tx:

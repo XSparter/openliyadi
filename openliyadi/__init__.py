@@ -37,7 +37,8 @@ from .protocol import (
 )
 from .controller import LEDController
 from .scanner import classify, scan_once, probe_devices
-from .ambilight import Ambilight, list_monitors, grab_average
+from .ambilight import Ambilight, list_monitors, grab_average, grab_spot, grab_center, grab_points
+from .music import MusicSync, list_sources, band_levels
 
 __all__ = [
     "__version__",
@@ -51,5 +52,7 @@ __all__ = [
     "pkt_effect", "pkt_off_last",
     "LEDController",
     "classify", "scan_once", "probe_devices",
-    "Ambilight", "list_monitors", "grab_average",
+    "Ambilight", "list_monitors", "grab_average", "grab_spot",
+    "grab_center", "grab_points",
+    "MusicSync", "list_sources", "band_levels",
 ]

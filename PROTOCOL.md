@@ -106,6 +106,10 @@ Dopo ogni invio l'app attende su notify la risposta
 - H=0 ignorato (rosso solo come H=360).
 - PALETTE headed ignorato in modo CCT; nessun OPEN richiesto davanti ai
   pacchetti modo (l'app non lo manda in `changeColor`).
+- **Spegnimento vero = pacchetto modo con primo byte 0** (l'app manda lo stato
+  corrente con `mode` forzato a `OFF_CODE` quando `onoffs=false`); il
+  `CLOSE_CODE` headed (`AA 0C 01 00 B7`) riduce solo la luminosità.
+   Senza stato noto va bene `[00,00,80,56,0,0,0,0,100,0]` (stile CCT).
 - Advertising rado (~20–30 s), MAC random non risolvibile che ruota.
 - Una connessione alla volta; GATT raggiungibile solo a slot libero.
 - K fuori dal modo CCT è ignorato (verificato K=0 e K=56).

@@ -285,6 +285,29 @@ int oly_effect_find(const char *name) {
 const uint8_t OLY_OFF_FALLBACK[10] =
     { 0x00, 0x00, 0x50, 0x38, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00 };
 
+const float OLY_POINTS5_DEFAULT[5][2] = {
+    { 0.50f, 0.50f },  /* centro */
+    { 0.06f, 0.50f },  /* sx */
+    { 0.94f, 0.50f },  /* dx */
+    { 0.50f, 0.06f },  /* alto */
+    { 0.50f, 0.94f }   /* basso */
+};
+
+int oly_points_clamp(float pts[5][2]) {
+    int i, j;
+    if (!pts)
+        return 0;
+    for (i = 0; i < 5; i++) {
+        for (j = 0; j < 2; j++) {
+            if (pts[i][j] < 0.0f)
+                pts[i][j] = 0.0f;
+            if (pts[i][j] > 1.0f)
+                pts[i][j] = 1.0f;
+        }
+    }
+    return 1;
+}
+
 size_t oly_mode_off(const uint8_t prev10[10], uint8_t *out, size_t out_sz) {
     size_t i;
     if (!prev10 || out_sz < 10)

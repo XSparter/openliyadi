@@ -136,6 +136,19 @@ size_t oly_effect(int id, int brightness, int speed,
 /* Effect id by (case-insensitive) name, or -1. */
 int oly_effect_find(const char *name);
 
+/* ---- ambilight sample points ---------------------------------------- */
+
+/*
+ * 5 punti relativi 0..1 (centro + 4 margini): la media dei loro colori
+ * alimenta il pacchetto HSI. La cattura schermo resta alla piattaforma;
+ * qui solo posizioni di default + validazione, uguale alla lib Python.
+ * Layout: [centro, sx, dx, alto, basso].
+ */
+extern const float OLY_POINTS5_DEFAULT[5][2];
+
+/* Clamp in/out a 0..1. Ritorna 1 se validi (5 coppie), 0 altrimenti. */
+int oly_points_clamp(float pts[5][2]);
+
 /* ---- power off ------------------------------------------------------ */
 
 /*

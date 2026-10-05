@@ -13,3 +13,10 @@ winrt-Windows.Foundation>=3.2
 fastapi>=0.120
 uvicorn>=0.34
 pydantic>=2.0
+
+# Ambilight (ambilight.py)
+mss>=10.0
+
+# Musica (music.py: loopback WASAPI + FFT)
+soundcard>=0.4
+numpy>=1.11

@@ -22,7 +22,8 @@ def _preview(monitor: int, fps: float):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Ambilight Liyadi da schermo")
-    ap.add_argument("--monitor", type=int, default=1)
+    ap.add_argument("--monitor", type=int, default=0,
+                    help="schermo (0 = auto: il più luminoso)")
     ap.add_argument("--fps", type=float, default=10.0)
     ap.add_argument("--lamp", action="store_true", help="invia davvero alla lampada")
     ap.add_argument("--list", action="store_true", help="elenca monitor ed esci")

@@ -17,6 +17,7 @@ import uvicorn
 from openliyadi.protocol import EFFECTS
 from openliyadi.controller import LEDController
 from openliyadi.ambilight import Ambilight, list_monitors
+from openliyadi.music import MusicSync, list_sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("led_server")
@@ -24,6 +25,7 @@ logger = logging.getLogger("led_server")
 app = FastAPI(title="LEDLYD Studio Controller")
 controller = LEDController()
 amb = Ambilight(controller)
+mus = MusicSync(controller)
 active_websockets: list[WebSocket] = []
 
 
@@ -59,8 +61,15 @@ class EffectReq(BaseModel):
     speed: int = 5
 
 class AmbStartReq(BaseModel):
-    monitor: int = 1
+    monitor: int = 0
     fps: float = 10.0
+    mode: str = "avg"
+    points: list | None = None
+
+class MusicStartReq(BaseModel):
+    source: str | None = None
+    fps: float = 10.0
+    sensitivity: float = 1.0
 
 
 # --- Listener per notifiche WebSocket ---
@@ -79,13 +88,12 @@ controller.add_status_listener(on_controller_status)
 @app.on_event("startup")
 async def startup_event():
     await controller.start()
-    # Se c'è un indirizzo salvato, prova a connettersi in background
-    if controller.mac_address:
-        asyncio.create_task(auto_connect_bg())
+    # Auto-connessione in background con auto-scoperta (nessun MAC cablato)
+    asyncio.create_task(auto_connect_bg())
 
 async def auto_connect_bg():
     try:
-        await controller.connect(controller.mac_address)
+        await controller.connect()
     except Exception as e:
         logger.info(f"Auto-connessione all'avvio in background non riuscita (la lampada potrebbe essere spenta): {e}")
 
@@ -188,7 +196,8 @@ async def amb_monitors():
 @app.post("/api/ambilight/start")
 async def amb_start(req: AmbStartReq):
     try:
-        return await amb.start(monitor=req.monitor, fps=req.fps)
+        return await amb.start(monitor=req.monitor, fps=req.fps,
+                               mode=req.mode, points=req.points)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -199,6 +208,43 @@ async def amb_stop():
 @app.get("/api/ambilight/status")
 async def amb_status():
     return amb.status()
+
+# --- Musica (audio PC -> lampada) ---
+@app.get("/api/music/sources")
+async def music_sources():
+    try:
+        return {"sources": list_sources()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/music/start")
+async def music_start(req: MusicStartReq):
+    try:
+        return await mus.start(source=req.source, fps=req.fps,
+                               sensitivity=req.sensitivity)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/music/stop")
+async def music_stop():
+    return await mus.stop()
+
+@app.get("/api/music/status")
+async def music_status():
+    return mus.status()
+
+@app.get("/api/ambilight/shot")
+async def amb_shot(monitor: int = 0):
+    """Screenshot ridotto JPEG del monitor (preview punti WebUI)."""
+    from fastapi.responses import Response
+    from openliyadi.ambilight import grab_shot_jpeg
+    try:
+        if monitor <= 0:
+            mons = list_monitors()
+            monitor = mons[0]["index"] if mons else 1
+        return Response(content=grab_shot_jpeg(monitor), media_type="image/jpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- WebSocket in tempo reale ---
@@ -232,9 +278,16 @@ async def websocket_endpoint(ws: WebSocket):
                     await controller.set_effect(data["effect"], data.get("brightness", 100), data.get("speed", 5))
                 elif action == "ambilight":
                     if data.get("on"):
-                        await amb.start(monitor=data.get("monitor", 1), fps=data.get("fps", 10.0))
+                        await amb.start(monitor=data.get("monitor", 0), fps=data.get("fps", 10.0),
+                                        mode=data.get("mode", "avg"), points=data.get("points"))
                     else:
                         await amb.stop()
+                elif action == "music":
+                    if data.get("on"):
+                        await mus.start(source=data.get("source"), fps=data.get("fps", 10.0),
+                                        sensitivity=data.get("sensitivity", 1.0))
+                    else:
+                        await mus.stop()
             except Exception as e:
                 await ws.send_text(json.dumps({"type": "error", "message": str(e)}))
     except WebSocketDisconnect:
@@ -250,6 +303,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LED Studio Control</title>
   <style>
@@ -267,7 +321,7 @@ HTML_PAGE = """<!DOCTYPE html>
       --radius: 12px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 16px; display: flex; justify-content: center; min-height: 100vh; }
+    body { background: var(--bg); color: var(--text); padding: 16px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
     .container { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: 16px; }
 
     /* Header & Power */
@@ -342,6 +396,10 @@ HTML_PAGE = """<!DOCTYPE html>
     .btn { padding: 8px 16px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
     .btn-primary { background: var(--primary); color: #fff; }
     .btn-secondary { background: #2d323f; color: var(--text); }
+    .amb-shot-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 2px solid #333a48; }
+    .amb-shot-wrap img { display: block; width: 100%; }
+    .amb-dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,0.9); border: 2px solid #111; transform: translate(-50%, -50%); cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #111; touch-action: none; }
+    .amb-dot:active { cursor: grabbing; }
   </style>
 </head>
 <body>
@@ -362,11 +420,15 @@ HTML_PAGE = """<!DOCTYPE html>
     </header>
 
     <!-- Navigation Tabs -->
+    <div style="text-align:center;">
+      <a href="https://buymeacoffee.com/dr_gaussx" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none; display:inline-block;" data-i18n="bmc">☕ Offrimi un caffè</a>
+    </div>
     <div class="tabs">
       <button class="tab-btn active" data-i18n="tab_rgb" onclick="setTab('rgb')">🎨 Colore / HSI</button>
       <button class="tab-btn" data-i18n="tab_cct" onclick="setTab('cct')">☀️ Studio CCT</button>
       <button class="tab-btn" data-i18n="tab_fx" onclick="setTab('fx')">⚡ 24 Effetti</button>
       <button class="tab-btn" data-i18n="tab_amb" onclick="setTab('amb')">🖥️ Ambilight</button>
+      <button class="tab-btn" data-i18n="tab_mus" onclick="setTab('mus')">🎵 Musica</button>
     </div>
 
     <!-- Panel 1: RGB / HSI -->
@@ -475,7 +537,23 @@ HTML_PAGE = """<!DOCTYPE html>
 
       <div class="control-group">
         <div class="control-header"><span data-i18n="amb_monitor">Schermo</span></div>
-        <select id="ambMonitor" style="padding:10px; border-radius:8px; background:#222630; color:#fff; border:1px solid var(--card-border);"></select>
+        <select id="ambMonitor" style="padding:10px; border-radius:8px; background:#222630; color:#fff; border:1px solid var(--card-border);" onchange="refreshAmbShot()"></select>
+      </div>
+
+      <div class="control-group">
+        <div class="control-header"><span data-i18n="amb_shot">Anteprima: trascina i 5 punti</span></div>
+        <div id="ambShotWrap" class="amb-shot-wrap">
+          <img id="ambShot" alt="preview schermo" />
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="control-header"><span data-i18n="amb_mode">Zona schermo</span></div>
+        <select id="ambMode" style="padding:10px; border-radius:8px; background:#222630; color:#fff; border:1px solid var(--card-border);">
+          <option value="avg" data-i18n="amb_avg">Media schermo</option>
+          <option value="center" data-i18n="amb_center">Punto centrale</option>
+          <option value="points" data-i18n="amb_points">5 punti (margini + centro)</option>
+        </select>
       </div>
 
       <div class="control-group">
@@ -489,14 +567,41 @@ HTML_PAGE = """<!DOCTYPE html>
       <button id="btnAmb" class="btn btn-primary" data-i18n="amb_start" onclick="toggleAmbilight()" style="padding:12px;">Avvia Ambilight</button>
       <div style="font-size:0.8rem; color:var(--text-muted);" data-i18n="amb_hint">La lampada segue il colore medio dello schermo, stile Philips Hue.</div>
     </div>
+
+    <!-- Panel 5: Musica -->
+    <div id="panel-mus" class="panel">
+      <div class="control-group">
+        <div class="control-header"><span data-i18n="mus_source">Sorgente audio</span></div>
+        <select id="musSource" style="padding:10px; border-radius:8px; background:#222630; color:#fff; border:1px solid var(--card-border);"></select>
+      </div>
+
+      <div class="control-group">
+        <div class="control-header">
+          <span data-i18n="mus_sens">Sensibilità beat</span>
+          <span id="valMusSens" class="control-value">1.0</span>
+        </div>
+        <input type="range" id="sliderMusSens" min="0.2" max="3" step="0.1" value="1" oninput="document.getElementById('valMusSens').textContent = parseFloat(this.value).toFixed(1)">
+      </div>
+
+      <div class="control-group">
+        <div class="control-header"><span data-i18n="mus_levels">Livelli</span></div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-muted);"><span style="width:40px;" data-i18n="mus_bass">Bassi</span><div style="flex:1; height:10px; background:#222630; border-radius:5px;"><div id="barBass" style="height:100%; width:0%; background:#ff2d2d; border-radius:5px;"></div></div></div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-muted);"><span style="width:40px;" data-i18n="mus_mid">Medi</span><div style="flex:1; height:10px; background:#222630; border-radius:5px;"><div id="barMid" style="height:100%; width:0%; background:#00e05a; border-radius:5px;"></div></div></div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-muted);"><span style="width:40px;" data-i18n="mus_high">Alti</span><div style="flex:1; height:10px; background:#222630; border-radius:5px;"><div id="barHigh" style="height:100%; width:0%; background:#2d7bff; border-radius:5px;"></div></div></div>
+      </div>
+
+      <button id="btnMus" class="btn btn-primary" data-i18n="mus_start" onclick="toggleMusic()" style="padding:12px;">Avvia Musica</button>
+      <div style="font-size:0.8rem; color:var(--text-muted);" data-i18n="mus_hint">La lampada balla con l'audio del PC: bassi, ritmo e spettro.</div>
+    </div>
   </div>
 
-  <footer style="text-align:center; font-size:0.8rem; color:var(--text-muted); padding:8px;">
-    <span data-i18n="footer_support">Ti piace openliyadi? Offrici un caffè:</span>
-    <a href="https://buymeacoffee.com/dr_gaussx" target="_blank" rel="noopener" style="color:var(--warning); font-weight:600;">buymeacoffee.com/dr_gaussx</a>
-  </footer>
+    <footer style="text-align:center; font-size:0.75rem; color:var(--text-muted); padding:12px 8px 4px;">
+      <span data-i18n="disclaimer">Software di prova distribuito gratuitamente così com'è (MIT): ognuno lo usa a propria responsabilità, l'autore non risponde di eventuali danni.</span>
+    </footer>
+  </div>
 
-  <!-- Scanner Modal -->  <div id="scannerModal" class="modal-overlay">
+  <!-- Scanner Modal -->
+  <div id="scannerModal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
         <h3 data-i18n="modal_title">Dispositivi Bluetooth (BLE)</h3>
@@ -519,6 +624,7 @@ HTML_PAGE = """<!DOCTYPE html>
       en: {
         tab_rgb: "🎨 Color / HSI", tab_cct: "☀️ CCT Studio", tab_fx: "⚡ 24 Effects",
         tab_amb: "🖥️ Ambilight",
+        tab_mus: "🎵 Music",
         power_title: "On/Off", hue: "Hue", sat: "Saturation", bri: "Brightness",
         presets: "Quick colors", cct_temp: "Color temperature", cct_bri: "CCT brightness",
         k_presets: "Photo Kelvin presets",
@@ -527,8 +633,18 @@ HTML_PAGE = """<!DOCTYPE html>
         fx_speed: "Effect speed (Frequency)", fx_bri: "Effect brightness",
         fx_select: "Select scene effect",
         footer_support: "Like openliyadi? Buy us a coffee:",
+        bmc: "☕ Buy me a coffee",
+        disclaimer: "Trial software distributed free of charge as-is (MIT): use at your own responsibility, the author is not liable for any damages.",
         amb_monitor: "Screen", amb_fps: "Refresh rate", amb_start: "Start Ambilight",
         amb_stop: "Stop", amb_hint: "The lamp follows the average screen color, Philips Hue style.",
+        amb_auto: "Auto (brightest screen)",
+        amb_shot: "Preview: drag the 5 points",
+        amb_mode: "Screen zone", amb_avg: "Whole screen average",
+        amb_center: "Center point", amb_points: "5 points (edges + center)",
+        mus_source: "Audio source", mus_sens: "Beat sensitivity",
+        mus_levels: "Levels", mus_bass: "Bass", mus_mid: "Mids", mus_high: "Highs",
+        mus_start: "Start Music", mus_stop: "Stop",
+        mus_hint: "The lamp dances with PC audio: bass, rhythm and spectrum.",
         modal_title: "Bluetooth (BLE) devices", close: "Close",
         scan_btn: "Start scan", scan_ready: "Ready to scan",
         scanning: "Scanning (12s)...", found: n => `Found ${n} devices`,
@@ -541,6 +657,7 @@ HTML_PAGE = """<!DOCTYPE html>
       it: {
         tab_rgb: "🎨 Colore / HSI", tab_cct: "☀️ Studio CCT", tab_fx: "⚡ 24 Effetti",
         tab_amb: "🖥️ Ambilight",
+        tab_mus: "🎵 Musica",
         power_title: "Accendi/Spegni", hue: "Tonalità (Hue)", sat: "Saturazione", bri: "Luminosità",
         presets: "Colori Rapidi", cct_temp: "Temperatura Colore", cct_bri: "Luminosità CCT",
         k_presets: "Preset Fotografici Kelvin",
@@ -549,8 +666,18 @@ HTML_PAGE = """<!DOCTYPE html>
         fx_speed: "Velocità Effetto (Frequency)", fx_bri: "Luminosità Effetto",
         fx_select: "Seleziona Effetto Scena",
         footer_support: "Ti piace openliyadi? Offrici un caffè:",
+        bmc: "☕ Offrimi un caffè",
+        disclaimer: "Software di prova distribuito gratuitamente così com'è (MIT): ognuno lo usa a propria responsabilità, l'autore non risponde di eventuali danni.",
         amb_monitor: "Schermo", amb_fps: "Frequenza", amb_start: "Avvia Ambilight",
         amb_stop: "Ferma", amb_hint: "La lampada segue il colore medio dello schermo, stile Philips Hue.",
+        amb_auto: "Auto (schermo più luminoso)",
+        amb_shot: "Anteprima: trascina i 5 punti",
+        amb_mode: "Zona schermo", amb_avg: "Media schermo",
+        amb_center: "Punto centrale", amb_points: "5 punti (margini + centro)",
+        mus_source: "Sorgente audio", mus_sens: "Sensibilità beat",
+        mus_levels: "Livelli", mus_bass: "Bassi", mus_mid: "Medi", mus_high: "Alti",
+        mus_start: "Avvia Musica", mus_stop: "Ferma",
+        mus_hint: "La lampada balla con l'audio del PC: bassi, ritmo e spettro.",
         modal_title: "Dispositivi Bluetooth (BLE)", close: "Chiudi",
         scan_btn: "Avvia Scansione", scan_ready: "Pronto per la scansione",
         scanning: "Scansione in corso (12s)...", found: n => `Trovati ${n} dispositivi`,
@@ -646,7 +773,7 @@ HTML_PAGE = """<!DOCTYPE html>
     // Tabs
     function setTab(name) {
       document.querySelectorAll(".tab-btn").forEach((b, i) => {
-        b.classList.toggle("active", ["rgb", "cct", "fx", "amb"][i] === name);
+        b.classList.toggle("active", ["rgb", "cct", "fx", "amb", "mus"][i] === name);
       });
       document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
       document.getElementById(`panel-${name}`).classList.add("active");
@@ -759,6 +886,11 @@ HTML_PAGE = """<!DOCTYPE html>
         .then(data => {
           const sel = document.getElementById("ambMonitor");
           sel.innerHTML = "";
+          const auto = document.createElement("option");
+          auto.value = "0";
+          auto.textContent = t("amb_auto");
+          auto.selected = true;
+          sel.appendChild(auto);
           (data.monitors || []).forEach(m => {
             const o = document.createElement("option");
             o.value = m.index;
@@ -770,15 +902,72 @@ HTML_PAGE = """<!DOCTYPE html>
     }
     loadMonitors();
 
+    // Ambilight punti trascinabili su preview schermo
+    let ambPoints = [[0.5, 0.5], [0.06, 0.5], [0.94, 0.5], [0.5, 0.06], [0.5, 0.94]];
+    let ambDrag = -1;
+
+    function renderAmbDots() {
+      const wrap = document.getElementById("ambShotWrap");
+      wrap.querySelectorAll(".amb-dot").forEach(d => d.remove());
+      ambPoints.forEach((p, i) => {
+        const d = document.createElement("div");
+        d.className = "amb-dot";
+        d.textContent = i + 1;
+        d.style.left = (p[0] * 100) + "%";
+        d.style.top = (p[1] * 100) + "%";
+        d.addEventListener("pointerdown", e => {
+          ambDrag = i;
+          d.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        });
+        d.addEventListener("pointermove", e => {
+          if (ambDrag !== i) return;
+          const r = wrap.getBoundingClientRect();
+          ambPoints[i] = [
+            Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+            Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+          ];
+          d.style.left = (ambPoints[i][0] * 100) + "%";
+          d.style.top = (ambPoints[i][1] * 100) + "%";
+        });
+        d.addEventListener("pointerup", () => {
+          if (ambDrag === i) {
+            ambDrag = -1;
+            if (ambOn) restartAmbWithPoints();
+          }
+        });
+        wrap.appendChild(d);
+      });
+    }
+
+    function refreshAmbShot() {
+      if (!document.getElementById("panel-amb").classList.contains("active")) return;
+      const mon = document.getElementById("ambMonitor").value || "0";
+      document.getElementById("ambShot").src = `/api/ambilight/shot?monitor=${mon}&_=${Date.now()}`;
+    }
+    setInterval(refreshAmbShot, 2500);
+
+    function restartAmbWithPoints() {
+      const monitor = parseInt(document.getElementById("ambMonitor").value || "0");
+      const fps = parseInt(document.getElementById("sliderAmbFps").value || "10");
+      fetch("/api/ambilight/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monitor, fps, mode: "points", points: ambPoints })
+      }).catch(() => {});
+    }
+    renderAmbDots();
+
     function toggleAmbilight() {
       const btn = document.getElementById("btnAmb");
       if (!ambOn) {
-        const monitor = parseInt(document.getElementById("ambMonitor").value || "1");
+        const monitor = parseInt(document.getElementById("ambMonitor").value || "0");
         const fps = parseInt(document.getElementById("sliderAmbFps").value || "10");
+        const mode = document.getElementById("ambMode").value || "avg";
         fetch("/api/ambilight/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ monitor, fps })
+          body: JSON.stringify({ monitor, fps, mode, points: mode === "points" ? ambPoints : null })
         }).then(() => {
           ambOn = true;
           btn.textContent = t("amb_stop");
@@ -808,6 +997,67 @@ HTML_PAGE = """<!DOCTYPE html>
           const hex = rgbToHex(r, g, b).toUpperCase();
           box.style.backgroundColor = hex;
           box.textContent = hex;
+        })
+        .catch(() => {});
+    }
+
+    // Musica
+    let musOn = false, musPoll = null;
+    function loadSources() {
+      fetch("/api/music/sources")
+        .then(r => r.json())
+        .then(data => {
+          const sel = document.getElementById("musSource");
+          sel.innerHTML = "";
+          (data.sources || []).forEach(s => {
+            const o = document.createElement("option");
+            o.value = s.id;
+            o.textContent = s.id;
+            sel.appendChild(o);
+          });
+        })
+        .catch(() => {});
+    }
+    loadSources();
+
+    function toggleMusic() {
+      const btn = document.getElementById("btnMus");
+      if (!musOn) {
+        const source = document.getElementById("musSource").value || null;
+        const sensitivity = parseFloat(document.getElementById("sliderMusSens").value || "1");
+        fetch("/api/music/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source, sensitivity })
+        }).then(() => {
+          musOn = true;
+          btn.textContent = t("mus_stop");
+          musPoll = setInterval(pollMusic, 500);
+        }).catch(err => alert(t("conn_err") + err.message));
+      } else {
+        fetch("/api/music/stop", { method: "POST" }).then(() => {
+          musOn = false;
+          btn.textContent = t("mus_start");
+          if (musPoll) { clearInterval(musPoll); musPoll = null; }
+        });
+      }
+    }
+
+    function pollMusic() {
+      fetch("/api/music/status")
+        .then(r => r.json())
+        .then(s => {
+          if (!s.running && musOn) {
+            musOn = false;
+            document.getElementById("btnMus").textContent = t("mus_start");
+            if (musPoll) { clearInterval(musPoll); musPoll = null; }
+            return;
+          }
+          const lv = s.levels || [0, 0, 0];
+          document.getElementById("barBass").style.width = Math.min(100, lv[0] * 220) + "%";
+          document.getElementById("barMid").style.width = Math.min(100, lv[1] * 220) + "%";
+          document.getElementById("barHigh").style.width = Math.min(100, lv[2] * 220) + "%";
+          document.getElementById("btnMus").style.background = s.beat ? "#ef4444" : "";
         })
         .catch(() => {});
     }
@@ -913,7 +1163,12 @@ HTML_PAGE = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    return HTML_PAGE
+    # Mai da cache: la UI cambia spesso in sviluppo
+    return HTMLResponse(
+        content=HTML_PAGE,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate",
+                 "Pragma": "no-cache", "Expires": "0"},
+    )
 
 
 def run(host: str = "0.0.0.0", port: int = 8080, open_browser: bool = True):

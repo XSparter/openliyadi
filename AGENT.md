@@ -65,8 +65,16 @@ Directory di lavoro: `E:\AltriDocumenti\ProgettieSviluppo\Script\Python\liyadifo
 
 ## 8. Stato open-source (ottobre 2026)
 Lampada identificata: **Liyadi LP540-PRO** (famiglia LTF_MWRGB/LYD_MWRGB presumibilmente compatibile).
-Repo pubblicato come MIT con: `README.md`, `requirements.txt`, `LICENSE`,
-`led_scan.py` (scanner: lampade certe via nome/FFF0, FEFF-only = "sospetta"),
-`server.py` fixato (`mac_address`, era `target_address`).
+Repo pubblico MIT (`XSparter/openliyadi`): `README.md`, `requirements.txt`, `LICENSE`,
+`led_scan.py` (scanner: lampade certe via nome/FFF0, FEFF-only = "sospetta",
+`--probe` GATT fino a FFF0), `server.py` WebUI IT/EN + REST/WS + ambilight +
+musica, `openliyadi/` package pip (protocol/controller/scanner/ambilight/music),
+`c/` lib C99.
 Colori via HSI raw (`pkt_rgb_hsi`), hue 1-360 (rosso=360, H=0 scartato dal firmware).
-Tabella effetti modsub testata dal vivo: tutti i 24 rispondono.
+OFF vero = modo con byte 0 (`pkt_off_last` + memoria ultimo stato; CLOSE dimmera e basta).
+Controller senza MAC cablato: `connect()` senza address fa auto-scoperta
+(scan + sonda GATT su tutto, dal segnale più forte); retry throttled 20 s +
+`last_error` in status (niente più fallimenti silenziosi nei loop).
+Ambilight: media/centro/5 punti (custom via HTTP/WS/Python/C), auto-monitor,
+preview JPEG + punti trascinabili in WebUI. Musica: loopback WASAPI (no mic),
+bande bassi/medi/alti + beat tracking.

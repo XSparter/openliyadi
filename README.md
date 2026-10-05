@@ -24,6 +24,7 @@ progetto ne reimplementa il protocollo in modo aperto e verificabile:
 - ☀️ **CCT studio** 2500–8500 K con preset fotografici
 - ⚡ **24 effetti di scena** (Flash, Candle, Police, Strobe, Chase, Firework, …)
 - 🖥️ **Ambilight** stile Philips Hue: la lampada segue lo schermo
+- 🎵 **Musica**: la lampada balla con l'audio del PC (bassi/ritmo/spettro)
 - 🔍 **Scanner BLE** con sonda GATT (trova la lampada anche senza nome)
 - 🌐 **WebUI + API HTTP/WebSocket** per comandare tutto e integrarci altro sopra
 - 📚 **Libreria C99** con gli stessi pacchetti, per app native/Android
@@ -57,6 +58,12 @@ python led_scan.py --probe
 python led_lyd.py --addr <MAC> on
 python led_lyd.py --addr <MAC> rgb 255 0 0
 python led_lyd.py --addr <MAC> off
+# Senza --addr: scansione + sonda GATT automatiche fino alla lampada.
+# UNA sola connessione alla volta: chiudi app/nRF del telefono prima!
+
+# Musica: audio di sistema via loopback (niente microfono)
+python music.py --levels          # barre livelli, senza lampada
+python music.py --lamp            # la lampada balla
 
 # WebUI completa
 python server.py   # -> http://localhost:8080
@@ -65,7 +72,7 @@ python server.py   # -> http://localhost:8080
 ## 🌐 API HTTP (per integrarci altro sopra)
 
 Base: `http://localhost:8080` · WebSocket realtime: `ws://localhost:8080/ws`
-(`{"action": "rgb"|"cct"|"hsi"|"brightness"|"power"|"effect"|"ambilight", "data": {...}}`)
+(`{"action": "rgb"|"cct"|"hsi"|"brightness"|"power"|"effect"|"ambilight"|"music", "data": {...}}`)
 
 | Metodo | Endpoint | Body JSON | Effetto |
 |---|---|---|---|
@@ -84,6 +91,10 @@ Base: `http://localhost:8080` · WebSocket realtime: `ws://localhost:8080/ws`
 | POST | `/api/ambilight/start` | `{"monitor":1,"fps":5}` | avvia ambilight |
 | POST | `/api/ambilight/stop` | — | ferma ambilight |
 | GET | `/api/ambilight/status` | — | stato + ultimo colore |
+| GET | `/api/music/sources` | — | sorgenti loopback audio |
+| POST | `/api/music/start` | `{"source":…,"fps":10,"sensitivity":1.0}` | avvia musica |
+| POST | `/api/music/stop` | — | ferma musica |
+| GET | `/api/music/status` | — | livelli bassi/medi/alti, beat, hue |
 
 Esempio:
 
@@ -111,6 +122,8 @@ configurabili. Anche da WebUI (tab 🖥️) e via API.
 | `pyproject.toml` | packaging (`pip install -e .`) |
 | `led_lyd.py` | CLI bleak multipiattaforma (single-shot, usa la libreria) |
 | `led_scan.py` | Scanner BLE + sonda GATT (`--probe`) |
+| `ambilight.py` | Ambilight da schermo (CLI: media/centro/5 punti, `--lamp`) |
+| `music.py` | Musica da audio di sistema loopback (CLI: `--levels`/`--lamp`) |
 | `ambilight.py` | Ambilight da schermo (CLI, usa la libreria) |
 | `ambilight.py` | Ambilight da schermo (mss) |
 | `server.py` | WebUI + API REST/WebSocket |

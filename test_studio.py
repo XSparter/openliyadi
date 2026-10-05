@@ -2,7 +2,7 @@ import asyncio
 from openliyadi.controller import LEDController
 
 async def test_full_controller():
-    c = LEDController("12:22:33:44:70:E0")
+    c = LEDController()  # auto-scoperta: scan + sonda GATT
     print("Connessione con LEDController...")
     await c.connect()
     
