@@ -60,7 +60,7 @@ class EffectReq(BaseModel):
 
 class AmbStartReq(BaseModel):
     monitor: int = 1
-    fps: float = 5.0
+    fps: float = 10.0
 
 
 # --- Listener per notifiche WebSocket ---
@@ -232,7 +232,7 @@ async def websocket_endpoint(ws: WebSocket):
                     await controller.set_effect(data["effect"], data.get("brightness", 100), data.get("speed", 5))
                 elif action == "ambilight":
                     if data.get("on"):
-                        await amb.start(monitor=data.get("monitor", 1), fps=data.get("fps", 5.0))
+                        await amb.start(monitor=data.get("monitor", 1), fps=data.get("fps", 10.0))
                     else:
                         await amb.stop()
             except Exception as e:
@@ -481,9 +481,9 @@ HTML_PAGE = """<!DOCTYPE html>
       <div class="control-group">
         <div class="control-header">
           <span data-i18n="amb_fps">Frequenza</span>
-          <span id="valAmbFps" class="control-value">5 /s</span>
+          <span id="valAmbFps" class="control-value">10 /s</span>
         </div>
-        <input type="range" id="sliderAmbFps" min="1" max="15" step="1" value="5" oninput="document.getElementById('valAmbFps').textContent = this.value + ' /s'">
+        <input type="range" id="sliderAmbFps" min="1" max="15" step="1" value="10" oninput="document.getElementById('valAmbFps').textContent = this.value + ' /s'">
       </div>
 
       <button id="btnAmb" class="btn btn-primary" data-i18n="amb_start" onclick="toggleAmbilight()" style="padding:12px;">Avvia Ambilight</button>
@@ -774,7 +774,7 @@ HTML_PAGE = """<!DOCTYPE html>
       const btn = document.getElementById("btnAmb");
       if (!ambOn) {
         const monitor = parseInt(document.getElementById("ambMonitor").value || "1");
-        const fps = parseInt(document.getElementById("sliderAmbFps").value || "5");
+        const fps = parseInt(document.getElementById("sliderAmbFps").value || "10");
         fetch("/api/ambilight/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -72,7 +72,7 @@ class Ambilight:
         self._task = None
         self.running = False
         self.monitor = 1
-        self.fps = 5.0
+        self.fps = 10.0
         self.smooth = 0.35  # 0.0-1.0: peso del nuovo campione
         self.sat_boost = 1.25
         self.min_v = 8      # sotto questa soglia manda nero (P=0 = minima)
@@ -82,7 +82,7 @@ class Ambilight:
         return {"running": self.running, "monitor": self.monitor,
                 "fps": self.fps, "last_rgb": list(self.last_rgb)}
 
-    async def start(self, monitor: int = 1, fps: float = 5.0) -> dict:
+    async def start(self, monitor: int = 1, fps: float = 10.0) -> dict:
         await self.stop()
         self.monitor = monitor
         self.fps = max(1.0, min(15.0, fps))
