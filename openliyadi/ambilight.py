@@ -160,7 +160,7 @@ def main() -> None:
             print(m)
         return
     if args.lamp:
-        from led_controller import LEDController
+        from .controller import LEDController
 
         async def go():
             c = LEDController()

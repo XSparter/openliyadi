@@ -1,5 +1,5 @@
 import asyncio
-from led_controller import LEDController
+from openliyadi.controller import LEDController
 
 async def test():
     c = LEDController("12:22:33:44:70:E0")

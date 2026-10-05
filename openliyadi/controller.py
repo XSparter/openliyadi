@@ -15,7 +15,7 @@ import winrt.windows.devices.bluetooth.genericattributeprofile as gatt
 import winrt.windows.storage.streams as streams
 from bleak import BleakScanner
 
-from led_protocol import (
+from .protocol import (
     pkt_open, pkt_close, pkt_rgb, pkt_brightness, pkt_cct, pkt_hsi, pkt_effect,
     pkt_rgb_hsi, pkt_off_last, EFFECTS, EFFECT_BY_NAME, TARGET_NAMES
 )

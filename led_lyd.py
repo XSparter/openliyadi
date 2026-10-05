@@ -35,111 +35,36 @@ def _bleak():
         sys.exit(1)
     return BleakClient, BleakScanner
 
-HEAD = 0xAA
-
-# CMD dal file assets/apps/__UNI__6FB700B/www/app-service.js -> common/msg-helper.js
-CMD = {
-    "LIGHT": 1,          # payload [area, brightness 0-100]
-    "SPEED": 2,          # payload [area, speed 0-100]
-    "FIXED_MODE": 3,     # payload [area, mode]
-    "PALETTE": 4,        # payload [area, R, G, B]
-    "DIY_MODE": 5,       # payload [?, total, index, ?, R, G, B] (segmentato)
-    "MUSIC_MODE": 6,     # come sopra
-    "MIC_SET": 7,        # payload [a, b]
-    "DEVICE_SWITCH": 8,  # payload [a, b]
-    "RGB_SWITCH": 9,     # payload [a, b]
-    "SET_PWM": 10,       # payload [a, b]
-    "OPEN_CODE": 11,     # payload [0]
-    "CLOSE_CODE": 12,    # payload [0]
-    # "mode" usati come primo byte dei pacchetti CCT/HSI/EFFECT (10 byte):
-    "OFF_CODE": 0,
-    "CCT_CODE": 1,
-    "HSI_CODE": 2,
-    "MLM_CODE": 3,       # effect
-    "APP_CODE": 4,
-}
-
-SERVICE_UUID = "0000FFF0-0000-1000-8000-00805F9B34FB"
-TX_UUID = "0000FFF3-0000-1000-8000-00805F9B34FB"  # write
-RX_UUID = "0000FFF4-0000-1000-8000-00805F9B34FB"  # notify
-
-TARGET_NAMES = ("LTF_MWRGB", "LYD_MWRGB", "Bough_Systems", "LYDBough_Systems")
+from openliyadi.protocol import (
+    TARGET_NAMES, TX_UUID, RX_UUID, OFF_FALLBACK,
+    pkt_open as _pkt_open,
+    pkt_brightness,
+    pkt_speed,
+    pkt_fixed_mode,
+    pkt_rgb_hsi as _pkt_rgb_hsi,
+)
+from openliyadi.scanner import classify as _classify
 
 
-def checksum(cmd: int, payload: bytes | list) -> int:
-    return (HEAD + cmd + len(payload) + sum(payload)) & 0xFF
-
-
-def build_packet(cmd: int, payload: list | bytes) -> bytes:
-    p = list(payload)
-    return bytes([HEAD, cmd, len(p)] + p + [checksum(cmd, p)])
-
-
-# --- Costruttori di comandi (mirror di msg-helper.js) ---
+# --- Wrapper compatibili (firme storiche area-first) sui builder del pacchetto ---
 def cmd_open() -> bytes:
-    return build_packet(CMD["OPEN_CODE"], [0])
-
-
-def cmd_close() -> bytes:
-    return build_packet(CMD["CLOSE_CODE"], [0])
+    return _pkt_open()
 
 
 def cmd_light(area: int, brightness: int) -> bytes:
-    assert 0 <= brightness <= 100, "brightness 0-100"
-    return build_packet(CMD["LIGHT"], [area, brightness])
+    return pkt_brightness(brightness, area)
 
 
 def cmd_speed(area: int, speed: int) -> bytes:
-    assert 0 <= speed <= 100, "speed 0-100"
-    return build_packet(CMD["SPEED"], [area, speed])
+    return pkt_speed(speed, area)
 
 
 def cmd_fixed_mode(area: int, mode: int) -> bytes:
-    return build_packet(CMD["FIXED_MODE"], [area, mode])
-
-
-def cmd_rgb(area: int, r: int, g: int, b: int) -> bytes:
-    return build_packet(CMD["PALETTE"], [area, r, g, b])
-
-
-def cmd_device_switch(a: int, b: int) -> bytes:
-    return build_packet(CMD["DEVICE_SWITCH"], [a, b])
-
-
-def cmd_mic(a: int, b: int) -> bytes:
-    return build_packet(CMD["MIC_SET"], [a, b])
-
-
-def cmd_mode10(mode: int, modsub: int, p: int, k: int, h: int, s: int,
-               flashmod: int, tnum: int, freq: int) -> bytes:
-    """Pacchetto a 10 byte usato da cctMode/hsiMode/effMode/paletteMode.
-    h (hue) viene spezzato little-endian: [h%256, h//256]."""
-    return bytes([mode, modsub, p, k, h % 256, h // 256, s, flashmod, tnum, freq])
-
-
-# Spegnimento vero (verificato dal vivo): pacchetto modo con mode=0.
-# CLOSE_CODE headed riduce solo la luminosita'. Stessi byte di OFF_FALLBACK.
-OFF_FALLBACK = bytes([0, 0, 80, 56, 0, 0, 0, 0, 100, 0])
+    return pkt_fixed_mode(area, mode)
 
 
 def cmd_rgb_hsi(r: int, g: int, b: int) -> bytes:
-    """Colore via pacchetto HSI raw (percorso del color picker: changeColor -> hsiMode).
-    Il PALETTE headed (cmd 4) non ha chiamanti nella UI e in modo CCT viene ignorato."""
-    rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
-    mx, mn = max(rf, gf, bf), min(rf, gf, bf)
-    d = mx - mn
-    if d == 0:
-        h = 0
-    elif mx == rf:
-        h = (60 * ((gf - bf) / d) + 360) % 360
-    elif mx == gf:
-        h = 60 * ((bf - rf) / d) + 120
-    else:
-        h = 60 * ((rf - gf) / d) + 240
-    s = 0 if mx == 0 else (d / mx) * 100
-    if round(h) == 0:
-        h = 360  # il firmware scarta H=0 (solo il rosso falliva): rosso = 360
-    return cmd_mode10(2, 0, round(mx * 100), 0, round(h), round(s), 0, 100, 0)
+    return _pkt_rgb_hsi(r, g, b)
 
 
 async def scan(timeout: float = 30.0):
@@ -160,10 +85,8 @@ async def scan(timeout: float = 30.0):
 
 
 def _is_lamp(name: str | None, uuids) -> bool:
-    name = name or ""
-    return any(n.lower() in name.lower() for n in TARGET_NAMES) or any(
-        ("fff0" in u.lower() or "feff" in u.lower()) for u in (uuids or [])
-    )
+    # Come prima: basta anche solo FEFF (la LP540-PRO lo trasmette senza nome).
+    return _classify(name, uuids) in ("LAMPADA", "sospetta")
 
 
 async def _wait_adv(address: str | None, timeout: float):

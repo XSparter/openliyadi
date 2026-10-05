@@ -14,9 +14,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
-from led_protocol import EFFECTS
-from led_controller import LEDController
-from ambilight import Ambilight, list_monitors
+from openliyadi.protocol import EFFECTS
+from openliyadi.controller import LEDController
+from openliyadi.ambilight import Ambilight, list_monitors
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("led_server")

@@ -1,3 +1,38 @@
+Metadata-Version: 2.4
+Name: openliyadi
+Version: 0.1.0
+Summary: Open BLE control for Liyadi RGB lights (LP540-PRO & co)
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: bleak>=3.0
+Provides-Extra: windows
+Requires-Dist: winrt-Windows.Devices.Bluetooth>=3.2; extra == "windows"
+Requires-Dist: winrt-Windows.Devices.Bluetooth.Advertisement>=3.2; extra == "windows"
+Requires-Dist: winrt-Windows.Devices.Bluetooth.GenericAttributeProfile>=3.2; extra == "windows"
+Requires-Dist: winrt-Windows.Devices.Enumeration>=3.2; extra == "windows"
+Requires-Dist: winrt-Windows.Storage.Streams>=3.2; extra == "windows"
+Requires-Dist: winrt-Windows.Foundation>=3.2; extra == "windows"
+Provides-Extra: web
+Requires-Dist: fastapi>=0.120; extra == "web"
+Requires-Dist: uvicorn>=0.34; extra == "web"
+Requires-Dist: pydantic>=2.0; extra == "web"
+Provides-Extra: ambilight
+Requires-Dist: mss>=10.0; extra == "ambilight"
+Provides-Extra: all
+Requires-Dist: winrt-Windows.Devices.Bluetooth>=3.2; extra == "all"
+Requires-Dist: winrt-Windows.Devices.Bluetooth.Advertisement>=3.2; extra == "all"
+Requires-Dist: winrt-Windows.Devices.Bluetooth.GenericAttributeProfile>=3.2; extra == "all"
+Requires-Dist: winrt-Windows.Devices.Enumeration>=3.2; extra == "all"
+Requires-Dist: winrt-Windows.Storage.Streams>=3.2; extra == "all"
+Requires-Dist: winrt-Windows.Foundation>=3.2; extra == "all"
+Requires-Dist: fastapi>=0.120; extra == "all"
+Requires-Dist: uvicorn>=0.34; extra == "all"
+Requires-Dist: pydantic>=2.0; extra == "all"
+Requires-Dist: mss>=10.0; extra == "all"
+Dynamic: license-file
+
 # openliyadi
 
 ![openliyadi](assets/logo.svg)
@@ -32,33 +67,18 @@ progetto ne reimplementa il protocollo in modo aperto e verificabile:
 ## 🚀 Quickstart
 
 ```bash
-pip install -e .          # libreria openliyadi (oppure: pip install -r requirements.txt)
-```
+pip install -r requirements.txt
 
-```python
-import asyncio
-from openliyadi import LEDController, pkt_rgb_hsi
-
-async def main():
-    lamp = LEDController("12:22:33:44:70:E0")  # o riscopri via led_scan.py --probe
-    await lamp.connect()
-    await lamp.set_rgb(255, 0, 0)      # HSI, percorso del color picker
-    await lamp.set_cct(5600, 100)      # bianco daylight
-    await lamp.set_effect("Police")    # 24 effetti
-    await lamp.turn_off()              # spegnimento vero (mode-OFF)
-    await lamp.stop()
-
-asyncio.run(main())
-```
-
-```bash
-# CLI: trova, accendi, colora, spegni
+# 1. Trova la lampada (una sola connessione BLE alla volta:
+#    chiudi app/nRF del telefono prima!)
 python led_scan.py --probe
+
+# 2. Accendi e colora
 python led_lyd.py --addr <MAC> on
 python led_lyd.py --addr <MAC> rgb 255 0 0
 python led_lyd.py --addr <MAC> off
 
-# WebUI completa
+# 3. WebUI completa
 python server.py   # -> http://localhost:8080
 ```
 
@@ -107,11 +127,10 @@ configurabili. Anche da WebUI (tab 🖥️) e via API.
 
 | File | Cosa fa |
 |---|---|
-| `openliyadi/` | **Libreria pip** (`protocol`, `controller`, `scanner`, `ambilight`) |
-| `pyproject.toml` | packaging (`pip install -e .`) |
-| `led_lyd.py` | CLI bleak multipiattaforma (single-shot, usa la libreria) |
+| `led_protocol.py` | **Client core Python**: pacchetti, RGB→HSI, CCT, effetti |
+| `led_controller.py` | Client Windows WinRT persistente (connessione stabile, coda) |
+| `led_lyd.py` | CLI bleak multipiattaforma (single-shot) |
 | `led_scan.py` | Scanner BLE + sonda GATT (`--probe`) |
-| `ambilight.py` | Ambilight da schermo (CLI, usa la libreria) |
 | `ambilight.py` | Ambilight da schermo (mss) |
 | `server.py` | WebUI + API REST/WebSocket |
 | `test_studio.py`, `test_rgb.py` | Smoke test dal vivo |

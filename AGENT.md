@@ -5,12 +5,14 @@ Controllare da PC (Python + BLE) una luce RGB gestita dall'app Android `LED.apk`
 (app **LEDLYD v2.0.15**, azienda produttrice fallita — nessun cloud, tutto locale via BLE).
 Directory di lavoro: `E:\AltriDocumenti\ProgettieSviluppo\Script\Python\liyadifoto`
 
-## 2. File presenti
-- `LED.apk` (~20 MB) — app originale (uni-app DCloud, id `__UNI__6FB700B`).
-- `led_lyd.py` — script Python (dipendenza: `pip install bleak`) che implementa il protocollo.
-  Comandi: `scan | on | off | rgb R G B | brightness N | speed N | fixedmode M | raw HEX`
-  Opzioni: `--addr MAC` (va PRIMA del comando), `--listen/--no-listen`.
-  Esempio: `python led_lyd.py --addr 12:22:33:44:70:E0 rgb 0 255 0`
+## 2. File presenti (libreria pip `openliyadi`, `pip install -e .`)
+- `openliyadi/protocol.py` — pacchetti, RGB→HSI, CCT, effetti, OFF.
+- `openliyadi/controller.py` — client Windows WinRT persistente (LEDController).
+- `openliyadi/scanner.py` — classify/scan_once/probe_devices.
+- `openliyadi/ambilight.py` — Ambilight (classe + helpers mss).
+- `led_lyd.py` / `led_scan.py` / `ambilight.py` — thin CLI sulla libreria.
+- `server.py` — WebUI + API (import da `openliyadi.*`).
+- `test_studio.py`, `test_rgb.py` — smoke test (`from openliyadi.controller import LEDController`).
 
 ## 3. Cosa si sa dall'APK (verificato leggendo il JS, non a intuito)
 - APK scompattato con `Expand-Archive`; logica in
