@@ -9,9 +9,10 @@
 
 Controllo open-source via **Bluetooth LE** per le luci fotografiche RGB
 **Liyadi LP540-PRO** (e compatibili `LTF_MWRGB` / `LYD_MWRGB` / `Bough_Systems`).
-Il produttore ha chiuso e l'app originale non è più mantenuta: questo progetto
-ne reimplementa il protocollo in modo aperto — **niente cloud, niente account**,
-solo Python + BLE.
+L'app originale è distribuita solo come APK closed-source **fuori dal Play Store** —
+quindi senza i controlli di sicurezza e gli aggiornamenti dello store. Questo
+progetto ne reimplementa il protocollo in modo aperto e verificabile:
+**niente cloud, niente account**, solo Python + BLE.
 
 > Progetto non ufficiale, reverse engineering a fini di interoperabilità.
 > Testato dal vivo: ON/OFF, RGB, CCT, HSI, 24 effetti, ambilight.
