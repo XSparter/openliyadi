@@ -136,6 +136,19 @@ size_t oly_effect(int id, int brightness, int speed,
 /* Effect id by (case-insensitive) name, or -1. */
 int oly_effect_find(const char *name);
 
+/* ---- power off ------------------------------------------------------ */
+
+/*
+ * True power-off (verified live): copy of the last mode10 packet with
+ * byte 0 forced to OFF (0), like the original app does. NOTE: the headed
+ * CLOSE_CODE only dims, it does NOT switch the lamp off.
+ * Returns 10, or 0 if prev is NULL or out too small.
+ */
+size_t oly_mode_off(const uint8_t prev10[10], uint8_t *out, size_t out_sz);
+
+/* Generic fallback when no previous state is known (CCT-style, live tested). */
+extern const uint8_t OLY_OFF_FALLBACK[10];
+
 #ifdef __cplusplus
 }
 #endif

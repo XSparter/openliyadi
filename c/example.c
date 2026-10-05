@@ -116,6 +116,22 @@ int main(void) {
         printf("[ok]   effect_find\n");
     }
 
+    /* true OFF: red-hsi with mode byte forced to 0 */
+    {
+        uint8_t prev[10], off[10];
+        static const uint8_t WANT_OFF[] =
+            { 0x00, 0x00, 0x64, 0x00, 0x68, 0x01, 0x64, 0x00, 0x64, 0x00 };
+        oly_rgb_hsi(255, 0, 0, -1, prev, sizeof prev);
+        n = oly_mode_off(prev, off, sizeof off);
+        check("mode-off", off, n, WANT_OFF, sizeof WANT_OFF);
+        if (oly_mode_off(0, off, sizeof off) != 0) {
+            printf("[FAIL] mode_off NULL not rejected\n");
+            fails++;
+        } else {
+            printf("[ok]   mode_off NULL rejected\n");
+        }
+    }
+
     printf(fails ? "RESULT: FAIL (%d)\n" : "RESULT: ALL OK\n", fails);
     return fails ? 1 : 0;
 }

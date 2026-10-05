@@ -281,3 +281,16 @@ int oly_effect_find(const char *name) {
     }
     return -1;
 }
+
+const uint8_t OLY_OFF_FALLBACK[10] =
+    { 0x00, 0x00, 0x50, 0x38, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00 };
+
+size_t oly_mode_off(const uint8_t prev10[10], uint8_t *out, size_t out_sz) {
+    size_t i;
+    if (!prev10 || out_sz < 10)
+        return 0;
+    for (i = 0; i < 10; i++)
+        out[i] = prev10[i];
+    out[0] = OLY_MODE_OFF;
+    return 10;
+}
