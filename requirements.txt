@@ -1,0 +1,15 @@
+# Base: tutto (protocollo, CLI, scanner)
+bleak>=3.0
+
+# Controller Windows diretto (WinRT) + Web UI
+winrt-Windows.Devices.Bluetooth>=3.2
+winrt-Windows.Devices.Bluetooth.Advertisement>=3.2
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile>=3.2
+winrt-Windows.Devices.Enumeration>=3.2
+winrt-Windows.Storage.Streams>=3.2
+winrt-Windows.Foundation>=3.2
+
+# Web UI (server.py)
+fastapi>=0.120
+uvicorn>=0.34
+pydantic>=2.0
